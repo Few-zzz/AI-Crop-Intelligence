@@ -1,0 +1,24 @@
+# ดึงภาพ Sentinel-2
+pystac-client==0.9.1
+odc-stac==0.5.3
+odc-geo==0.5.4
+dask==2026.8.0
+xarray==2026.9.0
+
+# ภูมิสารสนเทศ
+rasterio==1.5.2
+geopandas==1.2.0
+shapely==2.2.0
+pyproj==3.8.0
+
+# วิเคราะห์ข้อมูลและโมเดล
+numpy==2.5.4
+pandas==3.1.1
+scikit-learn==1.9.1
+joblib==1.6.0
+matplotlib==3.11.2
+pillow==13.0.0
+
+# เว็บ
+fastapi==0.162.6
+uvicorn==0.54.0

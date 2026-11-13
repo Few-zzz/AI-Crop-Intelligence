@@ -1,0 +1,17 @@
+ชุดทดสอบ: ครบุรี (93 จุด)
+Macro-F1 = 0.640   Overall accuracy = 0.828
+
+              precision    recall  f1-score   support
+
+     cassava       0.79      0.55      0.65        20
+      forest       0.98      1.00      0.99        48
+       maize       0.00      0.00      0.00         3
+        rice       0.55      0.86      0.67         7
+   sugarcane       0.38      0.50      0.43         6
+      umsure       0.00      0.00      0.00         0
+       urban       0.60      1.00      0.75         3
+       water       1.00      1.00      1.00         6
+
+    accuracy                           0.83        93
+   macro avg       0.54      0.61      0.56        93
+weighted avg       0.82      0.83      0.82        93

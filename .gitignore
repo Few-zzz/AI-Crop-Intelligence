@@ -1,0 +1,24 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# ผลลัพธ์ทั้งหมดสร้างใหม่ได้จากสคริปต์ (ndvi_stack_12m.tif ใหญ่ ~414 MB เกินขีดจำกัด 100 MB ของ GitHub)
+# ยกเว้นผลวัดโมเดลขนาดเล็กที่ใช้โชว์ใน README
+output/*
+!output/model/
+output/model/*
+!output/model/report.txt
+!output/model/confusion_matrix.png
+!output/model/feature_importance.png
+
+# ไฟล์โปรเจกต์ QGIS ส่วนตัว (เก็บ path ในเครื่อง)
+data/*.qgz
+data/*.qgs
+*.qgs~
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

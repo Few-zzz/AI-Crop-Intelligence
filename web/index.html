@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Crop Intelligence</title>
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f5; --panel: #ffffff; --text: #1d2420; --muted: #66706a;
+    --line: #e2e6e3; --accent: #2f7d4f; --test: #d9480f;
+    --font: "Leelawadee UI", "Tahoma", "Noto Sans Thai", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--font); }
+  .app { display: grid; grid-template-columns: 1fr 380px; height: 100vh; }
+  #map { width: 100%; height: 100%; cursor: crosshair; }
+  aside { background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; }
+  header { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 18px; }
+  header p { margin: 2px 0 0; color: var(--muted); font-size: 12.5px; }
+  section { padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  section h2 { margin: 0 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+  .seg button { border: 0; background: none; padding: 4px 10px; font: inherit; cursor: pointer; color: var(--muted); }
+  .seg button.on { background: var(--accent); color: #fff; }
+  input[type=range] { flex: 1; accent-color: var(--accent); }
+  input[type=checkbox] { accent-color: var(--accent); }
+  .legend { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+  .sw { width: 14px; height: 14px; border-radius: 3px; flex: none; border: 1px solid rgba(0,0,0,.15); }
+  .legend-actions { display: flex; gap: 12px; margin-top: 6px; font-size: 12.5px; }
+  .link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-decoration: underline; }
+  .grad { height: 10px; border-radius: 3px; background: linear-gradient(90deg,#a50026,#f46d43,#fee08b,#a6d96a,#006837); }
+  .grad-lbl { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); }
+  select { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); max-width: 100%; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 3px 4px; text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: normal; border-bottom: 1px solid var(--line); }
+  .bar { height: 4px; background: var(--line); border-radius: 2px; margin-top: 2px; }
+  .bar > i { display: block; height: 100%; border-radius: 2px; }
+  .note { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+  .tag { display: inline-block; font-size: 11px; padding: 0 6px; border-radius: 9px; background: #fde8dc; color: var(--test); margin-left: 6px; }
+  .big { font-size: 20px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .kv { display: grid; grid-template-columns: auto 1fr; gap: 0 12px; font-size: 13px; margin: 6px 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; }
+  #chart svg { width: 100%; height: auto; display: block; }
+  .empty { color: var(--muted); }
+  .loading { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(255,255,255,.7); font-size: 15px; z-index: 5; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151917; --panel: #1d2220; --text: #e6ebe8; --muted: #9aa49e; --line: #313935; --accent: #5bbf84; --test: #ff8a50; }
+    .tag { background: #3a2418; }
+    .loading { background: rgba(0,0,0,.5); }
+  }
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: 55vh auto; height: auto; }
+    #map { height: 55vh; }
+    aside { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div style="position:relative">
+    <div id="map"></div>
+    <div class="loading" id="loading">กำลังโหลดข้อมูล…</div>
+  </div>
+  <aside>
+    <header>
+      <h1>AI Crop Intelligence</h1>
+      <p>จำแนกชนิดพืชจาก NDVI รายเดือน Sentinel-2 (พ.ค. 2025 – เม.ย. 2026) · Random Forest · นครราชสีมา 4 อำเภอ</p>
+    </header>
+
+    <section>
+      <h2>ชั้นข้อมูล</h2>
+      <div class="row">
+        <span>แผนที่ฐาน</span>
+        <span class="seg" id="basemap">
+          <button data-v="osm" class="on">แผนที่</button>
+          <button data-v="esri">ภาพถ่ายดาวเทียม</button>
+        </span>
+      </div>
+      <div class="row">
+        <label><input type="radio" name="layer" value="crop" checked> ชนิดพืช</label>
+        <label><input type="radio" name="layer" value="confidence"> ความมั่นใจของโมเดล</label>
+      </div>
+      <div class="row">
+        <span>ความทึบ</span>
+        <input type="range" id="opacity" min="0" max="100" value="80">
+        <span id="opacityVal" style="width:36px;text-align:right">80%</span>
+      </div>
+      <div class="row">
+        <label><input type="checkbox" id="showAoi" checked> ขอบเขตอำเภอ (เส้นประสีส้ม = ครบุรี ชุดทดสอบ)</label>
+      </div>
+    </section>
+
+    <section id="legendCrop">
+      <h2>คลาส (ติ๊กเพื่อซ่อน/แสดง)</h2>
+      <div class="legend" id="legend"></div>
+      <div class="legend-actions">
+        <button class="link" id="allOn">แสดงทั้งหมด</button>
+        <button class="link" id="onlyCrops">เฉพาะพืชไร่ (ข้าว อ้อย มัน ข้าวโพด)</button>
+      </div>
+    </section>
+
+    <section id="legendConf" hidden>
+      <h2>ความมั่นใจ (ความน่าจะเป็นของคลาสที่ชนะ)</h2>
+      <div class="grad"></div>
+      <div class="grad-lbl"><span>0 ต่ำ</span><span>50</span><span>100 สูง</span></div>
+      <p class="note">สีแดง = โมเดลไม่แน่ใจ ควรไปเก็บ label เพิ่มบริเวณนั้น</p>
+    </section>
+
+    <section>
+      <h2>จุดที่คลิก</h2>
+      <div id="info" class="empty">คลิกบนแผนที่เพื่อดูคลาส ความมั่นใจ และกราฟ NDVI ของพิกเซลนั้น</div>
+      <div id="chart"></div>
+      <div class="row" id="compareRow" hidden>
+        <span style="font-size:13px">เทียบกับค่าเฉลี่ยของ</span>
+        <select id="compare"></select>
+      </div>
+    </section>
+
+    <section>
+      <h2>พื้นที่ตามผลจำแนก</h2>
+      <div class="row"><select id="district"></select></div>
+      <div id="areaTable"></div>
+      <p class="note">นับจากจำนวนพิกเซล × <span id="pxArea"></span> ตร.ม. ยังไม่ได้ปรับตามความคลาดเคลื่อนของโมเดล (Olofsson et al. 2014) จึงใช้ดูภาพรวมเท่านั้น</p>
+    </section>
+  </aside>
+</div>
+
+<script>
+const TH_MONTH = ["ม.ค.","ก.พ.","มี.ค.","เม.ย.","พ.ค.","มิ.ย.","ก.ค.","ส.ค.","ก.ย.","ต.ค.","พ.ย.","ธ.ค."];
+const FIELD_CROPS = ["rice", "sugarcane", "cassava", "maize"];
+const ORIGIN = location.origin;
+const fmt = (v, d = 0) => v.toLocaleString("th-TH", { minimumFractionDigits: d, maximumFractionDigits: d });
+const el = id => document.getElementById(id);
+
+let META = null;
+let byCode = {}, byName = {};
+const hidden = new Set();
+let activeLayer = "crop";
+let marker = null, lastPoint = null;
+
+const map = new maplibregl.Map({
+  container: "map",
+  center: [102.0, 15.0], zoom: 8,
+  style: {
+    version: 8,
+    sources: {
+      osm: { type: "raster", tileSize: 256, maxzoom: 19,
+             tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+             attribution: "© OpenStreetMap contributors" },
+      esri: { type: "raster", tileSize: 256, maxzoom: 19,
+              tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+              attribution: "Imagery © Esri" }
+    },
+    layers: [
+      { id: "osm", type: "raster", source: "osm" },
+      { id: "esri", type: "raster", source: "esri", layout: { visibility: "none" } }
+    ]
+  }
+});
+map.addControl(new maplibregl.NavigationControl(), "top-left");
+map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+
+// ---------- tile URL ของแผนที่พืช (ส่งรายการคลาสที่แสดงไปให้เซิร์ฟเวอร์กรอง)
+function cropTileUrl() {
+  if (!hidden.size) return `${ORIGIN}/tiles/crop/{z}/{x}/{y}.png`;
+  const show = META.classes.filter(c => !hidden.has(c.code)).map(c => c.code).join(",");
+  return `${ORIGIN}/tiles/crop/{z}/{x}/{y}.png?show=${show}`;
+}
+
+map.on("load", async () => {
+  const [meta, aoi] = await Promise.all([
+    fetch("/api/meta").then(r => r.json()),
+    fetch("/api/aoi").then(r => r.json())
+  ]);
+  META = meta;
+  meta.classes.forEach(c => { byCode[c.code] = c; byName[c.name] = c; });
+
+  const rasterSrc = url => ({ type: "raster", tiles: [url], tileSize: 256, bounds: meta.bounds, maxzoom: 15 });
+  map.addSource("crop", rasterSrc(cropTileUrl()));
+  map.addSource("confidence", rasterSrc(`${ORIGIN}/tiles/confidence/{z}/{x}/{y}.png`));
+  // nearest = ขยายแล้วเห็นพิกเซล 20 ม. คมๆ ไม่เบลอ (ไม่ผสมสีระหว่างคลาส)
+  const rasterPaint = { "raster-opacity": 0.8, "raster-resampling": "nearest", "raster-fade-duration": 0 };
+  map.addLayer({ id: "crop", type: "raster", source: "crop", paint: rasterPaint });
+  map.addLayer({ id: "confidence", type: "raster", source: "confidence", paint: rasterPaint,
+                 layout: { visibility: "none" } });
+
+  map.addSource("aoi", { type: "geojson", data: aoi });
+  map.addLayer({ id: "aoi-line", type: "line", source: "aoi", filter: ["!", ["get", "is_test"]],
+                 paint: { "line-color": "#222", "line-width": 1.6 } });
+  map.addLayer({ id: "aoi-test", type: "line", source: "aoi", filter: ["get", "is_test"],
+                 paint: { "line-color": "#d9480f", "line-width": 2.4, "line-dasharray": [3, 2] } });
+
+  map.fitBounds(meta.bounds, { padding: 30, duration: 0 });
+  buildLegend();
+  buildDistricts();
+  buildCompare();
+  el("pxArea").textContent = fmt(meta.pixel_area_m2);
+  el("loading").remove();
+});
+
+// ---------- แผงควบคุม
+el("basemap").addEventListener("click", e => {
+  const v = e.target.dataset.v; if (!v) return;
+  [...el("basemap").children].forEach(b => b.classList.toggle("on", b.dataset.v === v));
+  map.setLayoutProperty("osm", "visibility", v === "osm" ? "visible" : "none");
+  map.setLayoutProperty("esri", "visibility", v === "esri" ? "visible" : "none");
+});
+
+document.querySelectorAll("input[name=layer]").forEach(r => r.addEventListener("change", () => {
+  activeLayer = r.value;
+  map.setLayoutProperty("crop", "visibility", activeLayer === "crop" ? "visible" : "none");
+  map.setLayoutProperty("confidence", "visibility", activeLayer === "confidence" ? "visible" : "none");
+  el("legendCrop").hidden = activeLayer !== "crop";
+  el("legendConf").hidden = activeLayer !== "confidence";
+}));
+
+el("opacity").addEventListener("input", e => {
+  const v = e.target.value / 100;
+  el("opacityVal").textContent = e.target.value + "%";
+  ["crop", "confidence"].forEach(id => map.setPaintProperty(id, "raster-opacity", v));
+});
+
+el("showAoi").addEventListener("change", e => {
+  const vis = e.target.checked ? "visible" : "none";
+  ["aoi-line", "aoi-test"].forEach(id => map.setLayoutProperty(id, "visibility", vis));
+});
+
+function buildLegend() {
+  el("legend").innerHTML = META.classes.map(c => `
+    <label title="${c.name}">
+      <input type="checkbox" data-code="${c.code}" checked>
+      <span class="sw" style="background:${c.color}"></span>${c.name_th}
+    </label>`).join("");
+  el("legend").addEventListener("change", e => {
+    const code = +e.target.dataset.code;
+    e.target.checked ? hidden.delete(code) : hidden.add(code);
+    refreshCrop();
+  });
+  el("allOn").onclick = () => setHidden([]);
+  el("onlyCrops").onclick = () =>
+    setHidden(META.classes.filter(c => !FIELD_CROPS.includes(c.name)).map(c => c.code));
+}
+function setHidden(codes) {
+  hidden.clear(); codes.forEach(c => hidden.add(c));
+  el("legend").querySelectorAll("input").forEach(i => i.checked = !hidden.has(+i.dataset.code));
+  refreshCrop();
+}
+function refreshCrop() { map.getSource("crop").setTiles([cropTileUrl()]); }
+
+// ---------- ตารางพื้นที่
+function buildDistricts() {
+  const sel = el("district");
+  sel.innerHTML = `<option value="all">รวม 4 อำเภอ</option>` + META.districts.map((d, i) =>
+    `<option value="${i}">${d.name}${d.is_test ? " (ชุดทดสอบ)" : ""}</option>`).join("");
+  sel.onchange = renderArea;
+  renderArea();
+}
+function renderArea() {
+  const v = el("district").value;
+  const ds = v === "all" ? META.districts : [META.districts[+v]];
+  const sum = {};
+  let total = 0, confW = 0;
+  ds.forEach(d => {
+    d.classes.forEach(c => { sum[c.code] = (sum[c.code] || 0) + c.km2; });
+    total += d.mapped_km2; confW += (d.mean_conf || 0) * d.mapped_km2;
+  });
+  const rows = Object.entries(sum).map(([code, km2]) => ({ c: byCode[code], km2 }))
+    .filter(r => r.km2 > 0).sort((a, b) => b.km2 - a.km2);
+  const max = rows.length ? rows[0].km2 : 1;
+  el("areaTable").innerHTML = `
+    <dl class="kv">
+      <dt>พื้นที่ที่จำแนก</dt><dd>${fmt(total, 1)} ตร.กม. (${fmt(total * 625)} ไร่)</dd>
+      <dt>ความมั่นใจเฉลี่ย</dt><dd>${total ? fmt(confW / total, 1) : "–"} / 100</dd>
+    </dl>
+    <table>
+      <tr><th>คลาส</th><th>ตร.กม.</th><th>ไร่</th><th>%</th></tr>
+      ${rows.map(r => `
+        <tr><td><div class="row" style="margin:0;gap:6px"><span class="sw" style="background:${r.c.color}"></span>${r.c.name_th}</div>
+              <div class="bar"><i style="width:${100 * r.km2 / max}%;background:${r.c.color}"></i></div></td>
+            <td>${fmt(r.km2, 1)}</td><td>${fmt(r.km2 * 625)}</td><td>${fmt(100 * r.km2 / total, 1)}</td></tr>`).join("")}
+    </table>`;
+}
+
+// ---------- คลิกดูพิกเซล
+function buildCompare() {
+  const sel = el("compare");
+  sel.innerHTML = `<option value="">— ไม่เทียบ —</option>` +
+    Object.keys(META.curves).map(n => `<option value="${n}">${(byName[n] || {}).name_th || n}</option>`).join("");
+  sel.onchange = () => lastPoint && renderChart(lastPoint);
+}
+
+map.on("click", async e => {
+  const { lng, lat } = e.lngLat;
+  if (marker) marker.remove();
+  marker = new maplibregl.Marker({ color: "#111" }).setLngLat([lng, lat]).addTo(map);
+  const p = await fetch(`/api/point?lon=${lng}&lat=${lat}`).then(r => r.json());
+  lastPoint = p;
+  renderInfo(p);
+});
+
+function renderInfo(p) {
+  const info = el("info");
+  if (!p.inside || !p.code) {
+    info.className = "empty";
+    info.textContent = p.inside ? "พิกเซลนี้ไม่มีผลจำแนก (อยู่นอก 4 อำเภอ หรือไม่มีข้อมูล)" : "อยู่นอกขอบเขตภาพ";
+    el("chart").innerHTML = ""; el("compareRow").hidden = true;
+    return;
+  }
+  const c = byCode[p.code] || { color: "#ccc", name_th: p.crop };
+  info.className = "";
+  info.innerHTML = `
+    <div class="big"><span class="sw" style="background:${c.color};width:18px;height:18px"></span>${c.name_th}</div>
+    <dl class="kv">
+      <dt>ความมั่นใจ</dt><dd>${p.confidence} / 100</dd>
+      <dt>อำเภอ</dt><dd>${p.district || "–"}${p.district === META.test_district ? '<span class="tag">ชุดทดสอบ</span>' : ""}</dd>
+      <dt>พิกัด</dt><dd>${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</dd>
+    </dl>`;
+  el("compareRow").hidden = false;
+  renderChart(p);
+}
+
+// กราฟ NDVI 12 เดือน (SVG เขียนเอง ไม่ต้องใช้ไลบรารีกราฟ)
+function renderChart(p) {
+  const W = 340, H = 190, L = 34, R = 10, T = 12, B = 30;
+  const n = p.ndvi.length;
+  const x = i => L + i * (W - L - R) / (n - 1);
+  const y = v => T + (1 - (v + 0.1) / 1.1) * (H - T - B);   // แกน y: -0.1 ถึง 1.0
+  const path = vals => {
+    let d = "", pen = false;
+    vals.forEach((v, i) => {
+      if (v == null) { pen = false; return; }
+      d += `${pen ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true;
+    });
+    return d;
+  };
+  const own = byCode[p.code];
+  const series = [];
+  if (own && META.curves[own.name])
+    series.push({ vals: META.curves[own.name], color: own.color, label: `เฉลี่ย ${own.name_th} (จุด label)` });
+  const cmp = el("compare").value;
+  if (cmp && cmp !== (own && own.name))
+    series.push({ vals: META.curves[cmp], color: (byName[cmp] || {}).color || "#888", label: `เฉลี่ย ${(byName[cmp] || {}).name_th || cmp}` });
+
+  const grid = [0, 0.2, 0.4, 0.6, 0.8, 1].map(v =>
+    `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="currentColor" opacity=".12"/>
+     <text x="${L - 5}" y="${y(v) + 4}" text-anchor="end" font-size="10" fill="currentColor" opacity=".6">${v.toFixed(1)}</text>`).join("");
+  const months = META.months.map((m, i) => {
+    const mm = +m.slice(5, 7);
+    return `<text x="${x(i)}" y="${H - B + 14}" text-anchor="middle" font-size="9.5" fill="currentColor" opacity=".7">${TH_MONTH[mm - 1] || m}</text>`;
+  }).join("");
+  const gaps = p.ndvi.map((v, i) => v == null
+    ? `<rect x="${x(i) - 6}" y="${T}" width="12" height="${H - T - B}" fill="currentColor" opacity=".06"/>` : "").join("");
+  const lines = series.map(s =>
+    `<path d="${path(s.vals)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-dasharray="5 3"/>`).join("");
+  const dots = p.ndvi.map((v, i) => v == null ? "" :
+    `<circle cx="${x(i)}" cy="${y(v)}" r="3.2" fill="currentColor"><title>${META.months[i]}: ${v.toFixed(3)}</title></circle>`).join("");
+
+  el("chart").innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="กราฟ NDVI รายเดือน">
+      ${grid}${gaps}${months}${lines}
+      <path d="${path(p.ndvi)}" fill="none" stroke="currentColor" stroke-width="2.2"/>${dots}
+      <text x="${L}" y="${T - 2}" font-size="10" fill="currentColor" opacity=".6">NDVI</text>
+    </svg>
+    <div class="note">
+      <span style="display:inline-block;width:16px;border-top:2.2px solid currentColor;vertical-align:middle"></span> พิกเซลนี้
+      ${series.map(s => `&nbsp; <span style="display:inline-block;width:16px;border-top:2px dashed ${s.color};vertical-align:middle"></span> ${s.label}`).join("")}
+      <br>แถบเทา = เดือนที่เมฆบังทั้งเดือน (ตอนทำนาย โมเดลเติมค่าด้วย fill_gaps ก่อน)
+    </div>`;
+}
+</script>
+</body>
+</html>
