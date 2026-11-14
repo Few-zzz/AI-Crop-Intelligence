@@ -19,6 +19,8 @@ joblib==1.6.0
 matplotlib==3.11.2
 pillow==13.0.0
 
-# เว็บ
+# เว็บและฐานข้อมูล
 fastapi==0.162.6
 uvicorn==0.54.0
+psycopg[binary]==3.3.9
+rio-tiler==9.4.13

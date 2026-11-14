@@ -1,0 +1,92 @@
+# ระบบ AI Crop Intelligence ทั้งชุด
+#   docker compose up -d db          เปิดเฉพาะฐานข้อมูล (ตอนรัน 07_predict.py บนเครื่อง)
+#   docker compose up -d --build     เปิดทั้งระบบ แล้วเข้า http://localhost:3000
+# ต้องมีไฟล์ .env (คัดลอกจาก .env.example แล้วตั้งรหัสผ่าน)
+name: cropai
+
+services:
+  # ฐานข้อมูล PostgreSQL + PostGIS (schema สร้างอัตโนมัติจาก db/init ครั้งแรก)
+  db:
+    image: postgis/postgis:17-3.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cropai}
+      POSTGRES_USER: ${POSTGRES_USER:-cropai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ตั้ง POSTGRES_PASSWORD ในไฟล์ .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"   # เปิดเฉพาะในเครื่อง ไม่ให้คนนอกเข้าฐานข้อมูล
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cropai} -d ${POSTGRES_DB:-cropai}"]
+      interval: 5s
+      retries: 20
+
+  # ตัด tile แผนที่จากไฟล์ COG
+  titiler:
+    image: ghcr.io/developmentseed/titiler:2.4.0
+    restart: unless-stopped
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8000
+      WEB_CONCURRENCY: 2
+      MODULE_NAME: titiler.application.main
+      VARIABLE_NAME: app
+      GDAL_DISABLE_READDIR_ON_OPEN: EMPTY_DIR
+    volumes:
+      - ./output/seasons:/data/seasons:ro
+    ports:
+      - "127.0.0.1:8081:8000"   # สำหรับทดสอบในเครื่องเท่านั้น
+
+  # หลังบ้าน: FastAPI อ่านฐานข้อมูลและไฟล์ผลการทำนาย
+  api:
+    build: ./api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-cropai}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-cropai}
+      DATA_DIR: /data
+    volumes:
+      - ./output/seasons:/data/seasons:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8001:8000"   # สำหรับทดสอบในเครื่องเท่านั้น
+
+  # หน้าบ้าน: Next.js (ส่งต่อ /api และ /titiler ไปยัง service ข้างบนผ่านเครือข่ายภายใน)
+  web:
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8000
+      TITILER_URL: http://titiler:8000
+    depends_on:
+      - api
+      - titiler
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+
+  # หน้าเว็บจัดการฐานข้อมูล (เครื่องมือตอนพัฒนา ไม่เปิดพร้อมระบบหลัก)
+  #   docker compose --profile tools up -d pgadmin   แล้วเข้า http://localhost:5050
+  pgadmin:
+    image: dpage/pgadmin4:9.10
+    profiles: ["tools"]
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@example.com
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:?ตั้ง PGADMIN_PASSWORD ในไฟล์ .env}
+      # โหมดเดสก์ท็อป: ไม่ต้องล็อกอิน pgAdmin เพราะเปิดให้เข้าได้เฉพาะในเครื่องนี้
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+    volumes:
+      - pgadmin:/var/lib/pgadmin
+      - ./db/pgadmin/servers.json:/pgadmin4/servers.json:ro   # ลงทะเบียนฐานข้อมูล cropai ไว้ให้แล้ว
+    depends_on:
+      - db
+    ports:
+      - "127.0.0.1:5050:80"   # เปิดเฉพาะในเครื่อง
+
+volumes:
+  pgdata:
+  pgadmin:

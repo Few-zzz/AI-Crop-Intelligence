@@ -22,3 +22,13 @@ data/*.qgs
 .idea/
 Thumbs.db
 desktop.ini
+
+# ความลับ (รหัสผ่านฐานข้อมูล)
+.env
+
+# หน้าบ้าน Next.js
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+*.tsbuildinfo
+
