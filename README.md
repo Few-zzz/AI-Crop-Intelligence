@@ -92,6 +92,23 @@ docker compose up -d --build     # เปิดทั้งระบบ แล�
 4. `docker compose up -d --build` แล้วเปิดพอร์ต `WEB_PORT` (ค่าเริ่มต้น 3000) ให้ผู้ใช้เข้าถึง
 5. ฐานข้อมูล, TiTiler และ API เปิดพอร์ตเฉพาะ `127.0.0.1` คนนอกเข้าได้แค่หน้าเว็บ ถ้าจะใช้โดเมนและ HTTPS ให้วาง reverse proxy (เช่น Nginx หรือ Caddy) หน้าพอร์ต 3000
 
+### ย้ายโปรเจกต์ไปเครื่องอื่น
+
+โค้ดย้ายผ่าน GitHub ส่วนข้อมูลที่ไม่อยู่ใน Git (ฐานข้อมูล, `output/`, `.env`) ใช้ 2 สคริปต์นี้
+
+```powershell
+# เครื่องเดิม: แพ็กลงโฟลเดอร์เดียว (ค่าเริ่มต้น ..\crop-ai-move ราว 2 GB, -Full = เอา output/ ทั้งหมด)
+powershell -ExecutionPolicy Bypass -File scripts\pack_for_move.ps1 -Dest E:\crop-ai-move
+
+# เครื่องใหม่ (ต้องมี Git, Python 3.12, Docker Desktop)
+git clone https://github.com/Few-zzz/AI-Crop-Intelligence.git crop-ai
+cd crop-ai
+powershell -ExecutionPolicy Bypass -File scripts\restore_on_new_machine.ps1 -Pack E:\crop-ai-move
+```
+
+สคริปต์ restore จะตรวจ checksum, แตก `output/`, สร้าง `.venv`, restore ฐานข้อมูล แล้วเปิดทั้งระบบ ถ้าไม่มีไฟล์ dump ใช้ `-Rebuild` ให้สร้างข้อมูลใหม่ด้วย `07_predict.py --stack` (ไม่ต้องใช้เน็ต)
+โฟลเดอร์ที่แพ็กมี `.env` (รหัสผ่าน) อยู่ด้วย ห้ามอัปขึ้นที่สาธารณะ
+
 ### เว็บต้นแบบ
 
 `06_web_app.py` + `web/index.html` เป็นเว็บรุ่นแรก อ่านไฟล์ผลลัพธ์ตรง ไม่ใช้ฐานข้อมูล ดูได้ทีละฤดูกาล
