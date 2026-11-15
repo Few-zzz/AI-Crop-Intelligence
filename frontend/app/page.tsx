@@ -252,6 +252,23 @@ export default function Page() {
           </section>
         )}
 
+        {mode === "view" && run && (
+          <section>
+            <h2>ดาวน์โหลดผล · ฤดูกาล {run.season_label}</h2>
+            <div className="dl">
+              <a href={`/api/runs/${run.id}/download/stats.csv`} download>
+                <b>ตารางพื้นที่และ % (CSV)</b><small>รายอำเภอ + รวม · เปิดด้วย Excel</small></a>
+              <a href={`/api/runs/${run.id}/download/map.png`} download>
+                <b>ภาพแผนที่ (PNG)</b><small>สำหรับแปะรายงาน/สไลด์</small></a>
+              <a href={`/api/runs/${run.id}/download/crop_map.tif`} download>
+                <b>แผนที่ชนิดพืช (GeoTIFF)</b><small>20 ม. · เปิดด้วย QGIS</small></a>
+              <a href={`/api/runs/${run.id}/download/confidence.tif`} download>
+                <b>ความมั่นใจ (GeoTIFF)</b><small>ค่า 0–100 ต่อพิกเซล</small></a>
+            </div>
+            <p className="note">ไฟล์ครอบคลุมทั้ง 4 อำเภอและทุกคลาส ไม่ขึ้นกับตัวกรองอำเภอ/คลาสที่เลือกอยู่</p>
+          </section>
+        )}
+
         {mode === "compare" && cmp && (
           <section>
             <h2>เปรียบเทียบพื้นที่ · {cmp.a.label} → {cmp.b.label}</h2>

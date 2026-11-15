@@ -7,6 +7,7 @@
     .venv\\Scripts\\activate
     uvicorn api.main:app --port 8001 --reload
 """
+import csv
 import io
 import os
 from functools import lru_cache
@@ -16,9 +17,10 @@ import numpy as np
 import psycopg
 import rasterio
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from PIL import Image
 from psycopg.rows import dict_row
+from rasterio.enums import Resampling
 from rasterio.warp import transform as warp_transform
 from rasterio.windows import Window
 from rio_tiler.io import Reader
@@ -194,6 +196,84 @@ def change_tile(a: int, b: int, z: int, x: int, y: int):
         hexc = cols.get(name, {}).get("color", "#c8c8c8")
         rgba[changed & (tb == int(code))] = [int(hexc[1:3], 16), int(hexc[3:5], 16), int(hexc[5:7], 16), 255]
     return Response(_png(rgba), media_type="image/png")
+
+
+# ---------------------------------------------------------------- ดาวน์โหลดผลของแต่ละฤดูกาล
+RAI_PER_KM2 = 625
+
+
+def _fname(run, name, ext):
+    return f"{name}_{run['season_label'].replace('/', '-')}.{ext}"   # เช่น crop_map_2568-69.tif
+
+
+@app.get("/api/runs/{run_id}/download/{kind}.tif")
+def download_tif(run_id: int, kind: str):
+    """ไฟล์ GeoTIFF (COG) ต้นฉบับ เปิดใน QGIS ได้ทันที (crop_map มีตารางสีฝังอยู่แล้ว)"""
+    col = {"crop_map": "crop_map_path", "confidence": "confidence_path"}.get(kind)
+    if not col:
+        raise HTTPException(404, "มีแค่ crop_map หรือ confidence")
+    r = get_run(run_id)
+    path = DATA_DIR / r[col]
+    if not path.exists():
+        raise HTTPException(404, "ไม่พบไฟล์ผลลัพธ์ของฤดูกาลนี้")
+    return FileResponse(path, media_type="image/tiff", filename=_fname(r, kind, "tif"))
+
+
+@app.get("/api/runs/{run_id}/download/stats.csv")
+def download_stats(run_id: int):
+    """พื้นที่และสัดส่วน (%) ของแต่ละชนิดพืช รายอำเภอ + รวมทุกอำเภอ (เปิดใน Excel ได้ ภาษาไทยไม่เพี้ยน)"""
+    r = get_run(run_id)
+    rows = run_stats(run_id)
+    groups = {}
+    for s in rows:
+        groups.setdefault(s["district"], []).append(s)
+    total = {}
+    for s in rows:
+        t = total.setdefault(s["class"], {**s, "district": "รวมทุกอำเภอ", "role": "", "pixel_count": 0,
+                                          "area_km2": 0.0, "_conf": 0.0})
+        t["pixel_count"] += s["pixel_count"]
+        t["area_km2"] += s["area_km2"]
+        t["_conf"] += (s["mean_conf"] or 0) * s["pixel_count"]
+    for t in total.values():
+        t["mean_conf"] = t["_conf"] / t["pixel_count"] if t["pixel_count"] else None
+    groups["รวมทุกอำเภอ"] = sorted(total.values(), key=lambda t: -t["area_km2"])
+
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["ฤดูกาล", "อำเภอ", "บทบาท", "ชนิดพืช", "class", "จำนวนพิกเซล", "พื้นที่ (ตร.กม.)",
+                "พื้นที่ (ไร่)", "สัดส่วนในอำเภอ (%)", "ความมั่นใจเฉลี่ย (%)",
+                "โมเดล", "Macro-F1 ของโมเดล", "เดือนที่มีภาพ"])
+    role_th = {"train": "เทรน", "test": "ทดสอบ"}
+    for dist, items in groups.items():
+        dsum = sum(s["area_km2"] for s in items) or 1
+        for s in items:
+            w.writerow([r["season_label"], dist, role_th.get(s["role"], s["role"]), s["name_th"], s["class"],
+                        s["pixel_count"], round(s["area_km2"], 3), round(s["area_km2"] * RAI_PER_KM2),
+                        round(100 * s["area_km2"] / dsum, 2),
+                        round(s["mean_conf"], 1) if s["mean_conf"] is not None else "",
+                        f"{r['model_name']} {r['model_version']}",
+                        round(r["model_macro_f1"], 3) if r["model_macro_f1"] is not None else "",
+                        r["months_with_data"]])
+    # utf-8-sig (มี BOM) ให้ Excel รู้ว่าเป็น UTF-8 ไม่งั้นภาษาไทยเพี้ยน
+    return Response(buf.getvalue().encode("utf-8-sig"), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="{_fname(r, "area_stats", "csv")}"'})
+
+
+@app.get("/api/runs/{run_id}/download/map.png")
+def download_png(run_id: int, size: int = Query(2400, ge=256, le=8000)):
+    """ภาพแผนที่ชนิดพืช (PNG พื้นโปร่งใส) ย่อให้ด้านยาวไม่เกิน size พิกเซล ใช้แปะรายงาน/สไลด์"""
+    r = get_run(run_id)
+    with rasterio.open(DATA_DIR / r["crop_map_path"]) as s:
+        scale = min(1.0, size / max(s.width, s.height))
+        shape = (max(1, int(s.height * scale)), max(1, int(s.width * scale)))
+        codes = s.read(1, out_shape=shape, resampling=Resampling.nearest)
+    cols = class_colors()
+    lut = np.zeros((256, 4), "uint8")
+    for code, name in r["class_codes"].items():
+        hexc = cols.get(name, {}).get("color", "#c8c8c8")
+        lut[int(code)] = [int(hexc[1:3], 16), int(hexc[3:5], 16), int(hexc[5:7], 16), 255]
+    return Response(_png(lut[codes]), media_type="image/png",
+                    headers={"Content-Disposition": f'attachment; filename="{_fname(r, "crop_map", "png")}"'})
 
 
 # ---------------------------------------------------------------- คลิกดูพิกเซล
